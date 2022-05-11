@@ -49,4 +49,4 @@ Contributions are encouraged via pull requests, feature requests and bug reports
 License
 -------
 
-This software is released under the MIT license. See the LICENSE file for license rights and limitations.
+This software is released under the GPL v3.0 license. See the LICENSE file for license rights and limitations.
