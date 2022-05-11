@@ -39,7 +39,7 @@ Alternatively, just add the shotshaper directory to the PYTHONPATH.
 Documentation
 -------------
 
-Under construction
+Examples on how to use the package are given in the examples directory. Documentation is under construction.
 
 Contributions
 -------------
