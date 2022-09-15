@@ -16,20 +16,20 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from .transforms import T_12, T_23, T_34, T_14, T_41, T_31
 import matplotlib.pyplot as pl
-from numpy import matmul,pi,sqrt,arctan2,radians,degrees,sin,cos,array,concatenate,linspace,zeros_like,cross,zeros,argmin
+from numpy import exp,matmul,pi,sqrt,arctan2,radians,degrees,sin,cos,array,concatenate,linspace,zeros_like,cross,zeros,argmin
 from numpy.linalg import norm
 from . import environment
 import os
 import yaml
 
-T_END = 60 # Maximum time for simulation
-N_STEP = 100 # Number of simulation steps to use for post-processing. Note: Not actual simulation steps
+T_END = 60
+N_STEP = 200
 
-def hit_ground(t, x, *args): 
-    return x[2]
+def hit_ground(t, y, *args): 
+    return y[2]
 
-def stopped(t, x, *args):
-    U = norm(x[3:6])
+def stopped(t, y, *args):
+    U = norm(y[3:6])
     return U - 1e-4
 
 class Shot:
@@ -145,11 +145,10 @@ class _SphericalParticleAirResistance(_Particle):
         self.volume = 4./3.*pi*self.radius**3
         
     
-    def air_resistance_force(self,U):
-        Umag = norm(U)
-        Cd = self.drag_coefficient(Umag)
+    def air_resistance_force(self, U, Cd):
         
-        f = -0.5*environment.rho*self.area*Cd*abs(U)*U/self.mass
+        f = -0.5*environment.rho*self.area*Cd*norm(U)*U/self.mass
+        #f = -0.5*environment.rho*self.area*Cd*Umag*U/self.mass
         
         return f
     
@@ -157,7 +156,9 @@ class _SphericalParticleAirResistance(_Particle):
         x = vec[0:3]
         u = vec[3:6]
         
-        f = self.air_resistance_force(u) \
+        Cd = self.drag_coefficient(norm(u))
+        
+        f = self.air_resistance_force(u, Cd) \
           + self.gravity_force()
         
         return concatenate((u,f))
@@ -191,12 +192,12 @@ class _SphericalParticleAirResistance(_Particle):
             F = \\frac{2}{\\pi}\\cos^{-1}e^{-f} \\\\
             f = \\frac{B}{2}\\frac{R-r}{r\\sin\\phi}
 
-        A hub loss is also caluclated in the same manner.
 
         :param float velocity: Velocity seen by particle
         :return: Drag coefficient
         :rtype: float
         """
+    
         Re = self.reynolds_number(velocity)
         
         if Re <= 0:
@@ -240,11 +241,12 @@ class _SphericalParticleAirResistanceSpin(_SphericalParticleAirResistance):
         Cl = self.lift_coefficient(Umag, omega)
         
         if U.ndim == 1:
-            f = Cl*pi*self.radius**3*environment.rho*cross(spin, U)   
+            f = Cl*pi*self.radius**3*environment.rho*cross(spin, U)/self.mass
         else:
+            # Messy way to return spin array for post-processing
             f = zeros_like(U)
             for i in range(U.shape[1]):
-                f[:,i] = Cl*pi*self.radius**3*environment.rho*cross(spin, U[:,i])   
+                f[:,i] = Cl*pi*self.radius**3*environment.rho*cross(spin, U[:,i])/self.mass
         
         return f
     
@@ -252,7 +254,9 @@ class _SphericalParticleAirResistanceSpin(_SphericalParticleAirResistance):
         x = vec[0:3]
         u = vec[3:6]
         
-        f = self.air_resistance_force(u) \
+        Cd = self.drag_coefficient(norm(u), norm(spin))
+        
+        f = self.air_resistance_force(u, Cd) \
           + self.gravity_force() \
           + self.spin_force(u,spin)
         
@@ -281,24 +285,54 @@ class SoccerBall(_SphericalParticleAirResistanceSpin):
     Note that diameter can vary 110 mm to 130mm
     and 95 mm to 110 mm
     """
+    def __init__(self, mass=0.430, diameter=0.22):
+                    
+        super(SoccerBall, self).__init__(mass, diameter)
+    
+    def drag_coefficient(self, velocity, omega):
+        # Texture, sewing pattern and spin will alter
+        # the drag coefficient.
+        # Here, use correlation from
+        
+        # Goff, J. E., & Carré, M. J. (2010). Soccer ball lift 
+        # coefficients via trajectory analysis. 
+        # European Journal of Physics, 31(4), 775.
+        
+        
+        vc = 12.19
+        vs = 1.309
+        
+        S = omega*self.radius/velocity;
+        if S > 0.05 and velocity > vc:
+            Cd = 0.4127*S**0.3056;
+        else:
+            Cd = 0.155 + 0.346 / (1 + exp((velocity - vc)/vs))
+        
+        return Cd
+    
+    def lift_coefficient(self, Umag, omega):
+        # TODO - complex dependency on Re and spin, skin texture etc
+        return 0.9
+ 
+class TableTennisBall(SoccerBall):
+    """
+    
+    """
     def __init__(self):
         
-        mass = 0.430    # 0.41-0.45
-        diameter = 0.22 # 21.6-22.3
+        mass = 2.7e-3   
+        diameter = 40e-3 
             
-        super().__init__(mass, diameter)
-    
-    def drag_coefficient(self, velocity):
-        # TODO - Texture and sewing pattern will alter
-        #        the drag coefficient.
-        return super().drag_coefficient(velocity)
-    
-    
+        super(TableTennisBall, self).__init__(mass, diameter)
+        
+        
 class DiscGolfDisc(_Projectile):
     def __init__(self, name, mass=0.175):
         this_dir = os.path.dirname(os.path.abspath(__file__))
         path = os.path.join(this_dir, 'discs', name + '.yaml')
     
+        self.name = name
+        
         with open(path, 'r') as f:
             data = yaml.load(f, Loader=yaml.FullLoader)
             
@@ -313,6 +347,7 @@ class DiscGolfDisc(_Projectile):
             cl = array(data['Cl'])
             cd = array(data['Cd'])
             cm = array(data['Cm'])
+            
         
         self._alpha,self._Cl,self._Cd,self._Cm = self._flip(a,cl,cd,cm)
         kind = 'linear'
@@ -409,11 +444,14 @@ class DiscGolfDisc(_Projectile):
         pl.plot(self._alpha, self._Cd, 'C1-o',label='$C_D$')
         pl.plot(self._alpha, 3*self._Cm, 'C2-o',label='$C_M$')
         
+        a = linspace(-pi,pi,200)
+        #pl.plot(degrees(a), self.Cl(a), 'C0-',label='$C_L$')
+        #pl.plot(degrees(a), self.Cd(a), 'C1-',label='$C_D$')
+        #pl.plot(degrees(a), 3*self.Cm(a), 'C2-',label='$C_M$')
         
         pl.xlabel('Angle of attack ($^\circ$)')
         pl.ylabel('Aerodynamic coefficients (-)')
         pl.legend(loc='upper left')
-
         ax = pl.gca()
         ax2 = pl.gca().twinx()
         ax2.set_ylabel("Aerodynamic efficiency, $C_L/C_D$")
@@ -427,9 +465,13 @@ class DiscGolfDisc(_Projectile):
         # Simple empirical formula for spin rate, based on curve-fitting
         # data from:
         # https://www.dgcoursereview.com/dgr/forums/viewtopic.php?f=2&t=7097
+        #omega = -0.257*speed**2 + 15.338*speed
 
-        omega = -0.257*speed**2 + 15.338*speed
+        # Alternatively, experiments indicate a linear relationship,
+        omega = 5.2*speed
+
         return omega
+
             
     
     def initialize_shot(self, **kwargs):
@@ -485,6 +527,7 @@ class DiscGolfDisc(_Projectile):
     def post_process(self, s, omega):
         n = len(s.time)
         alphas = zeros(n)
+        betas = zeros(n)
         lifts = zeros(n)
         drags = zeros(n)
         moms = zeros(n)
@@ -497,13 +540,14 @@ class DiscGolfDisc(_Projectile):
             alpha, beta, Fd, Fl, M, g4 = self.forces(x, u, a, omega)
             
             alphas[i] = alpha
+            betas[i] = beta
             lifts[i] = Fl
             drags[i] = Fd
             moms[i] = M
             rolls[i] = -M/(omega*(self.I_xy - self.I_z))
         
         arc_length = norm(s.position, axis=0)
-        return arc_length,degrees(alphas),lifts,drags,moms,degrees(rolls)
+        return arc_length,degrees(alphas),degrees(betas),lifts,drags,moms,degrees(rolls)
             
     def forces(self, x, u, a, omega):
         # Velocity in body axes

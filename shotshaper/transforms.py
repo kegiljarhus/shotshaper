@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Functions to transform coordinates and angles between the
-coordinate systems used:
 
+The axes are denoted:
 1: Earth
 2: Body
 3: Zero side slip - rotation around z, to apply roll

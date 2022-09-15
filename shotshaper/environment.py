@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Variables for environmental conditions.
 """
 import numpy as np
 
-g = -9.8
+g = -9.81
 # Air
 rho = 1.225
 mu = 1.81e-5
@@ -16,10 +15,13 @@ zref = 1.5
 kappa = 0.41
 
 def wind_abl(z):
+    # For a constant wind:
+    # return Uref*winddir
+
     if z < 0.0:
         z = 0.0
     
-    ustar = Uref*kappa/(np.log((zref + z0)/z0))
-    u = ustar/kappa*np.log((z + z0)/z0)
+    ustar = Uref*kappa/(np.log((zref+z0)/z0))
+    u = ustar/kappa*np.log((z+z0)/z0)
     
     return u*winddir
