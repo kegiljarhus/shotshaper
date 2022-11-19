@@ -29,7 +29,7 @@ pl.ylabel('Drift (m)')
 pl.axis('equal')
 
 # Plot other parameters
-arc,alphas,lifts,drags,moms,rolls = d.post_process(shot, omega)
+arc,alphas,betas,lifts,drags,moms,rolls = d.post_process(shot, omega)
 fig, axes = pl.subplots(nrows=2, ncols=3, dpi=80,figsize=(13,5))
 
 axes[0,0].plot(arc, lifts)
